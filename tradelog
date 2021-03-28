@@ -1,0 +1,139 @@
+#!/bin/sh
+
+export POSIXLY_CORRECT=yes
+export LC_NUMERIC=en_US.UTF-8
+
+
+print_help(){
+    echo "Usage: tradelog [-h|--help]"
+    echo "       tradelog [FILTER...] [COMMAND] [LOG...]"
+    echo ""
+    echo "Filtry:"
+    echo "-a DATETIME   "
+    echo "-b DATETIME   "
+    echo "-t TICKER     "
+    echo "-w WIDTH      "
+    echo ""
+    echo "Prikazy:"
+    echo "list-tick"
+    echo "profit"
+    echo "pos"
+    echo "last-price"
+    echo "hist-ord"
+    echo "graph-pos"
+    echo ""
+    echo "popis programu"
+}
+
+print(){
+    SIZE=`eval $PROCESSED_COMMAND | awk -F ':' 'BEGIN{nejdelsi=length(\$2)}{if(nejdelsi<length(\$2)) nejdelsi=length(\$2)}END{print nejdelsi}'`
+    PRINT="eval $PROCESSED_COMMAND | awk -F ':' '{printf(\"%-10s: %$SIZE.2f\n\",\$1,\$2)}'"
+    $PRINT
+}
+
+
+COMMAND=""
+TICKERS=""
+FILES=""
+GZ_FILES=""
+AFTER_DATETIME="0000-00-00"
+BEFORE_DATETIME="9999-99-99"
+WIDTH=0
+
+while [ "$#" -gt 0 ]; do                #-gt greater then (man test for more info)
+    case "$1" in
+    list-tick | profit | pos | last-price | hist-ord | graph-pos)
+        COMMAND="$1"
+        shift
+        ;;
+    -h | --help)
+        print_help
+        exit 0
+        ;;
+    -a)
+        AFTER_DATETIME="$2"
+        shift
+        shift
+        ;;
+    -b)
+        BEFORE_DATETIME="$2"
+        shift
+        shift
+        ;;
+    -t)
+        TICKERS="$2|$TICKERS"
+        shift
+        shift
+        ;;
+    -w)
+        WIDTH="$2"
+        shift
+        shift
+        ;;
+    *)                                  #neni zde prikaz ani filtr
+        if [ "$1" = *.gz ]; then
+           GZ_FILES="$1 $GZ_FILES"
+        else
+            FILES="$1 $FILES"
+        fi
+        shift
+        ;;
+    esac
+done
+
+if [ "$GZ_FILES" = "" ] && [ "$FILES" = "" ]; then
+    INPUT="cat"                                                       #neobsahuje zadne soubory
+elif [ "$GZ_FILES" = "" ]; then
+    INPUT="cat $FILES | sort -u"                                             #pokud neobsahuje gzip soubory
+else
+    INPUT="gzip -d -c $GZ_FILES | cat $FILES - | sort"        #pokud obsahuje gzip soubory
+fi
+
+if [ "$TICKERS" = "" ]; then
+    TICKERS_FILTER="cat"
+else
+    TICKERS_FILTER="grep -E '^.*;($TICKERS);.*'"
+fi
+
+
+FILTERED="eval $INPUT | awk -F ';' '{if (\$1>\"$AFTER_DATETIME\" && \$1 <\"$BEFORE_DATETIME\") print \$0 }' | $TICKERS_FILTER"
+
+case "$COMMAND" in
+    list-tick)
+        TICK="eval $FILTERED | awk -F ';' '{print \$2}' | sort -u"
+        eval $TICK
+        ;;
+    profit)
+        PROFIT="eval $FILTERED | awk -F ';' 'BEGIN{celkem=0}{if(\$3==\"sell\"){celkem=celkem+\$4*\$6} else {celkem=celkem-\$4*\$6}}END{printf(\"%.2f\n\",celkem)}'"
+        eval $PROFIT
+        ;;
+    pos)
+        PROCESSED_COMMAND="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{celkem=0;aktualni=\$2;posledni_cena=\$4}{if(aktualni==\$2){if(\$3==\"sell\"){celkem=celkem-\$6} else {celkem=celkem+\$6};posledni_cena=\$4} else {if(aktualni!=\"\"){printf(\"%s:%.2f\n\",aktualni,celkem*posledni_cena);posledni_cena=\$4}aktualni=\$2;if(\$3==\"sell\"){celkem=-\$6} else {celkem=+\$6}} }END{printf(\"%s: %.2f\n\",aktualni,celkem*posledni_cena)}' | sort -t ':' -k 2,2 -n -r"
+        print
+        ;;
+    last-price)
+        PROCESSED_COMMAND="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{aktualni=\$2;posledni_cena=\$4} {if(aktualni==\$2){posledni_cena=\$4} else{if(aktualni!=\"\"){printf(\"%s:%.2f\n\",aktualni,posledni_cena);posledni_cena=\$4}aktualni=\$2} } END{printf(\"%s:%.2f\n\",aktualni,posledni_cena)}'"
+        print
+        ;;
+    hist-ord)
+        SCALE=1
+        if [ "$WIDTH" -ne 0 ]; then
+            SCALE=`eval $FILTERED | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ';' 'BEGIN{aktualni=\$2;pocet=0;nejvetsi=0} {if(aktualni==\$2){pocet++} else{if(pocet>nejvetsi){nejvetsi=pocet};pocet=1;aktualni=\$2}}END{print nejvetsi/width}'`
+        fi
+        GRAPH="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{aktualni=\$2;pocet=0} {if(aktualni==\$2){pocet++} else{if(aktualni!=\"\"){printf(\"%-10s: \",aktualni);for(i=0;i<int(pocet/$SCALE);i++){printf(\"#\")};printf(\"\n\")}aktualni=\$2;pocet=1} } END{printf(\"%-10s: \",aktualni);for(i=0;i<pocet;i++){printf(\"#\")};printf(\"\n\")}'"
+        $GRAPH
+        ;;
+    graph-pos)
+        SCALE=1000
+        PROCESSED_COMMAND="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{celkem=0;aktualni=\$2;posledni_cena=\$4}{if(aktualni==\$2){if(\$3==\"sell\"){celkem=celkem-\$6} else {celkem=celkem+\$6};posledni_cena=\$4} else {if(aktualni!=\"\"){printf(\"%s:%.2f\n\",aktualni,celkem*posledni_cena);posledni_cena=\$4}aktualni=\$2;if(\$3==\"sell\"){celkem=-\$6} else {celkem=+\$6}} }END{printf(\"%s: %.2f\n\",aktualni,celkem*posledni_cena)}' | sort -t ':' -k 2,2 -n -r"
+        if [ "$WIDTH" -ne 0 ]; then
+            SCALE=`eval $PROCESSED_COMMAND | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ':' 'BEGIN{nejvetsi=0} {if(sqrt(\$2*\$2)>nejvetsi){nejvetsi=sqrt(\$2*\$2)}}END{print nejvetsi/width}'`
+        fi
+        GRAPH="eval $PROCESSED_COMMAND | awk -F ':' '{printf(\"%-10s:\",\$1);for(i=0;i<int(sqrt(\$2*\$2)/$SCALE);i++){if(i==0)printf(\" \");if(\$2>0){printf(\"#\")}else{printf(\"!\")}};printf(\"\n\")}' | sort"
+        $GRAPH
+        ;;
+    *)
+        $FILTERED
+        ;;
+
+esac
