@@ -118,7 +118,9 @@ case "$COMMAND" in
     hist-ord)
         SCALE=1
         if [ "$WIDTH" -ne 0 ]; then
-            SCALE=`eval $FILTERED | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ';' 'BEGIN{aktualni=\$2;pocet=0;nejvetsi=0} {if(aktualni==\$2){pocet++} else{if(pocet>nejvetsi){nejvetsi=pocet};pocet=1;aktualni=\$2}}END{print nejvetsi/width}'`
+            SCALE="eval $FILTERED | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ';' 'BEGIN{aktualni=\$2;pocet=0;nejvetsi=0} {if(aktualni==\$2){pocet++} else{if(pocet>nejvetsi){nejvetsi=pocet};pocet=1;aktualni=\$2}}END{printf(\"%f\",nejvetsi/width)}'"
+            #SCALE=`eval $FILTERED | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ';' 'BEGIN{aktualni=\$2;pocet=0;nejvetsi=0} {if(aktualni==\$2){pocet++} else{if(pocet>nejvetsi){nejvetsi=pocet};pocet=1;aktualni=\$2}}END{print nejvetsi/width}'`
+            SCALE=$(eval $SCALE)
         fi
         GRAPH="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{aktualni=\$2;pocet=0} {if(aktualni==\$2){pocet++} else{if(aktualni!=\"\"){printf(\"%-10s: \",aktualni);for(i=0;i<int(pocet/$SCALE);i++){printf(\"#\")};printf(\"\n\")}aktualni=\$2;pocet=1} } END{printf(\"%-10s: \",aktualni);for(i=0;i<pocet;i++){printf(\"#\")};printf(\"\n\")}'"
         $GRAPH
@@ -127,7 +129,8 @@ case "$COMMAND" in
         SCALE=1000
         PROCESSED_COMMAND="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{celkem=0;aktualni=\$2;posledni_cena=\$4}{if(aktualni==\$2){if(\$3==\"sell\"){celkem=celkem-\$6} else {celkem=celkem+\$6};posledni_cena=\$4} else {if(aktualni!=\"\"){printf(\"%s:%.2f\n\",aktualni,celkem*posledni_cena);posledni_cena=\$4}aktualni=\$2;if(\$3==\"sell\"){celkem=-\$6} else {celkem=+\$6}} }END{printf(\"%s: %.2f\n\",aktualni,celkem*posledni_cena)}' | sort -t ':' -k 2,2 -n -r"
         if [ "$WIDTH" -ne 0 ]; then
-            SCALE=`eval $PROCESSED_COMMAND | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ':' 'BEGIN{nejvetsi=0} {if(sqrt(\$2*\$2)>nejvetsi){nejvetsi=sqrt(\$2*\$2)}}END{print nejvetsi/width}'`
+            SCALE="eval $PROCESSED_COMMAND | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ':' 'BEGIN{nejvetsi=0} {if(sqrt(\$2*\$2)>nejvetsi){nejvetsi=sqrt(\$2*\$2)}}END{printf(\"%f\",nejvetsi/width)}'"
+            SCALE=$(eval $SCALE)
         fi
         GRAPH="eval $PROCESSED_COMMAND | awk -F ':' '{printf(\"%-10s:\",\$1);for(i=0;i<int(sqrt(\$2*\$2)/$SCALE);i++){if(i==0)printf(\" \");if(\$2>0){printf(\"#\")}else{printf(\"!\")}};printf(\"\n\")}' | sort"
         $GRAPH
