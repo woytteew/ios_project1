@@ -1,3 +1,7 @@
+#IOS - Project 1
+#Author woytteew
+#Date 4.4.2021
+
 #!/bin/sh
 
 export POSIXLY_CORRECT=yes
@@ -8,29 +12,76 @@ print_help(){
     echo "Usage: tradelog [-h|--help]"
     echo "       tradelog [FILTER...] [COMMAND] [LOG...]"
     echo ""
-    echo "Filtry:"
-    echo "-a DATETIME   "
-    echo "-b DATETIME   "
-    echo "-t TICKER     "
-    echo "-w WIDTH      "
+    echo "Filters:"
+    echo "-a DATETIME   after: only data after this date"
+    echo "              FORMAT YYYY-MM-DD HH:MM:SS"
+    echo "-b DATETIME   before: only data before this date"
+    echo "-t TICKER     only data with this ticker"
+    echo "              you can use more then 1 argument -t"
+    echo "-w WIDTH      set graph width (length of longest line)"
+    echo "              using more then one -w will result in error"
     echo ""
-    echo "Prikazy:"
-    echo "list-tick"
-    echo "profit"
-    echo "pos"
-    echo "last-price"
-    echo "hist-ord"
-    echo "graph-pos"
+    echo "Commands:"
+    echo "list-tick     list all tickers"
+    echo "profit        print total profit"
+    echo "pos           list of values ​​of currently held positions sorted in descending order"
+    echo "last-price    list of the last known price for each ticker"
+    echo "hist-ord      graph of the number of transactions according to tickers"
+    echo "graph-pos     graph of values ​​of held positions according to tickers"
     echo ""
-    echo "popis programu"
+    echo "This script analyzes and generates stock trading statistics"
 }
 
 print(){
-    SIZE=`eval $PROCESSED_COMMAND | awk -F ':' 'BEGIN{nejdelsi=length(\$2)}{if(nejdelsi<length(\$2)) nejdelsi=length(\$2)}END{print nejdelsi}'`
+    #AWK code that finds the number with most characters
+    AWK="'BEGIN{
+            nejdelsi=length(\$2);
+        }
+        {
+            if(nejdelsi<length(\$2)) nejdelsi=length(\$2);
+        }
+        END{
+            print nejdelsi;
+        }'"
+    SIZE="eval $PROCESSED_COMMAND | awk -F ':' $AWK"
+    SIZE=$(eval $SIZE)
     PRINT="eval $PROCESSED_COMMAND | awk -F ':' '{printf(\"%-10s: %$SIZE.2f\n\",\$1,\$2)}'"
     $PRINT
 }
 
+process_pos(){
+    #AWK code that counts value of held postitions
+    AWK="'BEGIN{
+            celkem=0;
+            aktualni=\$2;
+            posledni_cena=\$4;
+        }
+        {
+            if(aktualni==\$2){
+                if(\$3==\"sell\"){
+                    celkem=celkem-\$6;
+                }
+                else{
+                    celkem=celkem+\$6;
+                }
+                posledni_cena=\$4;
+            }
+            else{
+                if(aktualni!=\"\"){
+                    printf(\"%s:%.2f\n\",aktualni,celkem*posledni_cena);
+                    posledni_cena=\$4}aktualni=\$2;if(\$3==\"sell\"){
+                        celkem=-\$6;
+                    }
+                    else{
+                        celkem=+\$6;
+                    }
+            }
+        }
+        END{
+            printf(\"%s: %.2f\n\",aktualni,celkem*posledni_cena);
+        }'"
+    PROCESSED_COMMAND="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' $AWK | sort -t ':' -k 2,2 -n -r"
+}
 
 COMMAND=""
 TICKERS=""
@@ -40,7 +91,7 @@ AFTER_DATETIME="0000-00-00"
 BEFORE_DATETIME="9999-99-99"
 WIDTH=0
 
-while [ "$#" -gt 0 ]; do                #-gt greater then (man test for more info)
+while [ "$#" -gt 0 ]; do
     case "$1" in
     list-tick | profit | pos | last-price | hist-ord | graph-pos)
         COMMAND="$1"
@@ -66,11 +117,16 @@ while [ "$#" -gt 0 ]; do                #-gt greater then (man test for more inf
         shift
         ;;
     -w)
-        WIDTH="$2"
+        if [ "$WIDTH" -eq 0 ]; then
+            WIDTH="$2"
+        else
+            echo "You can put only one width argument"
+            exit 0
+        fi
         shift
         shift
         ;;
-    *)                                  #neni zde prikaz ani filtr
+    *)
         if [ "$1" = *.gz ]; then
            GZ_FILES="$1 $GZ_FILES"
         else
@@ -82,20 +138,20 @@ while [ "$#" -gt 0 ]; do                #-gt greater then (man test for more inf
 done
 
 if [ "$GZ_FILES" = "" ] && [ "$FILES" = "" ]; then
-    INPUT="cat"                                                       #neobsahuje zadne soubory
+    INPUT="cat"                                                       #doesn't contain any files
 elif [ "$GZ_FILES" = "" ]; then
-    INPUT="cat $FILES | sort -u"                                             #pokud neobsahuje gzip soubory
+    INPUT="cat $FILES | sort -u"                                             #doesnt't contain gzip files
 else
-    INPUT="gzip -d -c $GZ_FILES | cat $FILES - | sort"        #pokud obsahuje gzip soubory
+    INPUT="gzip -d -c $GZ_FILES | cat $FILES - | sort"        #contains gzip files
 fi
 
 if [ "$TICKERS" = "" ]; then
     TICKERS_FILTER="cat"
 else
-    TICKERS_FILTER="grep -E '^.*;($TICKERS);.*'"
+    TICKERS_FILTER="grep -E '^.*;($TICKERS);.*'"                #finding all lines that contains user set tickers using regular expressions
 fi
 
-
+#Filtering file according to filters
 FILTERED="eval $INPUT | awk -F ';' '{if (\$1>\"$AFTER_DATETIME\" && \$1 <\"$BEFORE_DATETIME\") print \$0 }' | $TICKERS_FILTER"
 
 case "$COMMAND" in
@@ -104,32 +160,143 @@ case "$COMMAND" in
         eval $TICK
         ;;
     profit)
-        PROFIT="eval $FILTERED | awk -F ';' 'BEGIN{celkem=0}{if(\$3==\"sell\"){celkem=celkem+\$4*\$6} else {celkem=celkem-\$4*\$6}}END{printf(\"%.2f\n\",celkem)}'"
+        #awk code that counts total profit
+        AWK="'BEGIN{
+                celkem=0;
+            }
+            {
+                if(\$3==\"sell\"){
+                    celkem=celkem+\$4*\$6;
+                } 
+                else{
+                    celkem=celkem-\$4*\$6;
+                }
+            }
+            END{
+                printf(\"%.2f\n\",celkem);
+            }'"
+        PROFIT="eval $FILTERED | awk -F ';' $AWK"
         eval $PROFIT
         ;;
     pos)
-        PROCESSED_COMMAND="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{celkem=0;aktualni=\$2;posledni_cena=\$4}{if(aktualni==\$2){if(\$3==\"sell\"){celkem=celkem-\$6} else {celkem=celkem+\$6};posledni_cena=\$4} else {if(aktualni!=\"\"){printf(\"%s:%.2f\n\",aktualni,celkem*posledni_cena);posledni_cena=\$4}aktualni=\$2;if(\$3==\"sell\"){celkem=-\$6} else {celkem=+\$6}} }END{printf(\"%s: %.2f\n\",aktualni,celkem*posledni_cena)}' | sort -t ':' -k 2,2 -n -r"
+        process_pos
         print
         ;;
     last-price)
-        PROCESSED_COMMAND="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{aktualni=\$2;posledni_cena=\$4} {if(aktualni==\$2){posledni_cena=\$4} else{if(aktualni!=\"\"){printf(\"%s:%.2f\n\",aktualni,posledni_cena);posledni_cena=\$4}aktualni=\$2} } END{printf(\"%s:%.2f\n\",aktualni,posledni_cena)}'"
+        #AWK code that gets the last price of each ticker and prints it
+        AWK="'BEGIN{
+                aktualni=\$2;
+                posledni_cena=\$4;
+            } 
+            {
+                if(aktualni==\$2){
+                    posledni_cena=\$4;
+                } 
+                else{
+                    if(aktualni!=\"\"){
+                        printf(\"%s:%.2f\n\",aktualni,posledni_cena);posledni_cena=\$4;
+                    }
+                    aktualni=\$2;
+                } 
+            } 
+            END{
+                printf(\"%s:%.2f\n\",aktualni,posledni_cena);
+            }'"
+        PROCESSED_COMMAND="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' $AWK"
         print
         ;;
     hist-ord)
         SCALE=1
         if [ "$WIDTH" -ne 0 ]; then
-            SCALE=`eval $FILTERED | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ';' 'BEGIN{aktualni=\$2;pocet=0;nejvetsi=0} {if(aktualni==\$2){pocet++} else{if(pocet>nejvetsi){nejvetsi=pocet};pocet=1;aktualni=\$2}}END{print nejvetsi/width}'`
+            #AWK code that gets the scale according to width
+            AWK="'BEGIN{
+                    aktualni=\$2;
+                    pocet=0;
+                    nejvetsi=0;
+                } 
+                {
+                    if(aktualni==\$2){
+                        pocet++;
+                    } 
+                    else{
+                        if(pocet>nejvetsi){
+                            nejvetsi=pocet;
+                        }
+                        pocet=1;
+                        aktualni=\$2;
+                    }
+                }
+                END{
+                    printf(\"%f\",nejvetsi/width);
+                }'"
+            SCALE="eval $FILTERED | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ';' $AWK"
+            SCALE=$(eval $SCALE)
         fi
-        GRAPH="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{aktualni=\$2;pocet=0} {if(aktualni==\$2){pocet++} else{if(aktualni!=\"\"){printf(\"%-10s: \",aktualni);for(i=0;i<int(pocet/$SCALE);i++){printf(\"#\")};printf(\"\n\")}aktualni=\$2;pocet=1} } END{printf(\"%-10s: \",aktualni);for(i=0;i<pocet;i++){printf(\"#\")};printf(\"\n\")}'"
+        #AWk code that prints the graph with correct scale
+        AWK="'BEGIN{
+                aktualni=\$2;
+                pocet=0;
+            } 
+            {
+                if(aktualni==\$2){
+                    pocet++;
+                } 
+                else{
+                    if(aktualni!=\"\"){
+                        printf(\"%-10s: \",aktualni);
+                        for(i=0;i<int(pocet/$SCALE);i++){
+                            printf(\"#\");
+                        }
+                        printf(\"\n\")
+                    }
+                    aktualni=\$2;
+                    pocet=1;
+                } 
+            } 
+            END{
+                printf(\"%-10s: \",aktualni);
+                for(i=0;i<int(pocet/$SCALE);i++){
+                    printf(\"#\");
+                    }
+                printf(\"\n\");
+            }'"
+        GRAPH="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' $AWK"
         $GRAPH
         ;;
     graph-pos)
         SCALE=1000
-        PROCESSED_COMMAND="eval $FILTERED | sort -t ';' -k 2,2 | awk -F ';' 'BEGIN{celkem=0;aktualni=\$2;posledni_cena=\$4}{if(aktualni==\$2){if(\$3==\"sell\"){celkem=celkem-\$6} else {celkem=celkem+\$6};posledni_cena=\$4} else {if(aktualni!=\"\"){printf(\"%s:%.2f\n\",aktualni,celkem*posledni_cena);posledni_cena=\$4}aktualni=\$2;if(\$3==\"sell\"){celkem=-\$6} else {celkem=+\$6}} }END{printf(\"%s: %.2f\n\",aktualni,celkem*posledni_cena)}' | sort -t ':' -k 2,2 -n -r"
+        process_pos
         if [ "$WIDTH" -ne 0 ]; then
-            SCALE=`eval $PROCESSED_COMMAND | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ':' 'BEGIN{nejvetsi=0} {if(sqrt(\$2*\$2)>nejvetsi){nejvetsi=sqrt(\$2*\$2)}}END{print nejvetsi/width}'`
+            AWK="'BEGIN{
+                    nejvetsi=0;
+                } 
+                {
+                    if(sqrt(\$2*\$2)>nejvetsi){
+                        nejvetsi=sqrt(\$2*\$2);
+                    }
+                }
+                END{
+                    printf(\"%f\",nejvetsi/width);
+                }'"
+            SCALE="eval $PROCESSED_COMMAND | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ':' $AWK"
+            SCALE=$(eval $SCALE)
         fi
-        GRAPH="eval $PROCESSED_COMMAND | awk -F ':' '{printf(\"%-10s:\",\$1);for(i=0;i<int(sqrt(\$2*\$2)/$SCALE);i++){if(i==0)printf(\" \");if(\$2>0){printf(\"#\")}else{printf(\"!\")}};printf(\"\n\")}' | sort"
+        AWK="'{
+                printf(\"%-10s:\",\$1);
+                for(i=0;i<int(sqrt(\$2*\$2)/$SCALE);i++){
+                    if(i==0){
+                        printf(\" \");
+                    }
+                    if(\$2>0){
+                        printf(\"#\");
+                    }
+                    else{
+                        printf(\"!\");
+                    }
+                }
+                printf(\"\n\");
+            }'"
+        GRAPH="eval $PROCESSED_COMMAND | awk -F ':' $AWK | sort"
         $GRAPH
         ;;
     *)
