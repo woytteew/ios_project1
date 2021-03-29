@@ -208,6 +208,7 @@ case "$COMMAND" in
     hist-ord)
         SCALE=1
         if [ "$WIDTH" -ne 0 ]; then
+<<<<<<< HEAD
             #AWK code that gets the scale according to width
             AWK="'BEGIN{
                     aktualni=\$2;
@@ -230,6 +231,10 @@ case "$COMMAND" in
                     printf(\"%f\",nejvetsi/width);
                 }'"
             SCALE="eval $FILTERED | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ';' $AWK"
+=======
+            SCALE="eval $FILTERED | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ';' 'BEGIN{aktualni=\$2;pocet=0;nejvetsi=0} {if(aktualni==\$2){pocet++} else{if(pocet>nejvetsi){nejvetsi=pocet};pocet=1;aktualni=\$2}}END{printf(\"%f\",nejvetsi/width)}'"
+            #SCALE=`eval $FILTERED | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ';' 'BEGIN{aktualni=\$2;pocet=0;nejvetsi=0} {if(aktualni==\$2){pocet++} else{if(pocet>nejvetsi){nejvetsi=pocet};pocet=1;aktualni=\$2}}END{print nejvetsi/width}'`
+>>>>>>> 27510e0884903505c4f0c0c8278320c4fe65c765
             SCALE=$(eval $SCALE)
         fi
         #AWk code that prints the graph with correct scale
@@ -267,6 +272,7 @@ case "$COMMAND" in
         SCALE=1000
         process_pos
         if [ "$WIDTH" -ne 0 ]; then
+<<<<<<< HEAD
             AWK="'BEGIN{
                     nejvetsi=0;
                 } 
@@ -279,6 +285,9 @@ case "$COMMAND" in
                     printf(\"%f\",nejvetsi/width);
                 }'"
             SCALE="eval $PROCESSED_COMMAND | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ':' $AWK"
+=======
+            SCALE="eval $PROCESSED_COMMAND | sort -t ';' -k 2,2 | awk -v width=$WIDTH -F ':' 'BEGIN{nejvetsi=0} {if(sqrt(\$2*\$2)>nejvetsi){nejvetsi=sqrt(\$2*\$2)}}END{printf(\"%f\",nejvetsi/width)}'"
+>>>>>>> 27510e0884903505c4f0c0c8278320c4fe65c765
             SCALE=$(eval $SCALE)
         fi
         AWK="'{
